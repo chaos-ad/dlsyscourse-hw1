@@ -1,3 +1,4 @@
+from locale import normalize
 import struct
 import gzip
 import numpy as np
@@ -7,7 +8,40 @@ sys.path.append('python/')
 import needle as ndl
 
 
-def parse_mnist(image_filesname, label_filename):
+def unpack_part(fmt, data):
+    size = struct.calcsize(fmt)
+    return struct.unpack(fmt, data[:size]), data[size:]
+
+def read_idx_file(filename):
+    with gzip.open(filename, mode='rb') as fileobj:
+        data = fileobj.read()
+
+        (zero1, zero2, type_id, dims), data = unpack_part('>bbbb', data)
+        if zero1 != 0 or zero2 != 0:
+            raise Exception("Invalid file format")
+
+        types = {
+            int('0x08', base=16): 'B',
+            int('0x09', base=16): 'b',
+            int('0x0B', base=16): 'h',
+            int('0x0C', base=16): 'i',
+            int('0x0D', base=16): 'f',
+            int('0x0E', base=16): 'd'
+        }
+        type_code = types[type_id]
+
+        dim_sizes, data = unpack_part('>' + ('i' * dims), data)
+        num_examples = dim_sizes[0]
+        input_dim = int(np.prod(dim_sizes[1:]))
+
+        X, data = unpack_part('>' + (type_code * (num_examples * input_dim)), data)
+        if data:
+            raise Exception("invalid file format")
+
+        new_shape = (num_examples, input_dim) if input_dim > 1 else num_examples
+        return np.array(X).reshape(new_shape, order='C')
+
+def parse_mnist(image_filename, label_filename):
     """ Read an images and labels file in MNIST format.  See this page:
     http://yann.lecun.com/exdb/mnist/ for a description of the file format.
 
@@ -30,7 +64,10 @@ def parse_mnist(image_filesname, label_filename):
                 for MNIST will contain the values 0-9.
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    images = read_idx_file(image_filename).astype('float32')
+    images = (images - images.min()) / (images.max() - images.min())
+    labels = read_idx_file(label_filename).astype('uint8')
+    return images, labels
     ### END YOUR SOLUTION
 
 
@@ -50,10 +87,28 @@ def softmax_loss(Z, y_one_hot):
     Returns:
         Average softmax loss over the sample. (ndl.Tensor[np.float32])
     """
+
+    ## Reference code from HW0:
+    # return (np.log(np.exp(Z).sum(axis=1)) - Z[np.arange(Z.shape[0]), y]).mean()
+    ## Or:
+    # z2 = np.log(np.exp(Z).sum(axis=1))
+    # y2 = (Z * one_hot(y)).sum(axis=1)
+    # return (z2 - y2).mean()
+
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    z2 = ndl.log(ndl.summation(ndl.exp(Z), axes=(1)))
+    y2 = ndl.summation(ndl.multiply(Z, y_one_hot), axes=(1))
+    res = ndl.sub(z2, y2)
+    res = ndl.divide_scalar(ndl.summation(res), res.shape[0])
+    return res
     ### END YOUR SOLUTION
 
+def one_hot(indexes, dims=None):
+    dims = dims or indexes.max()+1
+    return np.eye(dims)[indexes]
+
+def normalize_rows(values):
+    return ndl.divide(values, ndl.broadcast_to(ndl.summation(values, axes=(1,)), values.shape))
 
 def nn_epoch(X, y, W1, W2, lr = 0.1, batch=100):
     """ Run a single epoch of SGD for a two-layer neural network defined by the
@@ -79,8 +134,35 @@ def nn_epoch(X, y, W1, W2, lr = 0.1, batch=100):
             W2: ndl.Tensor[np.float32]
     """
 
+    ## Reference code from HW0:
+    # def normalize_rows(values):
+    #     return values / values.sum(axis=1)[:, np.newaxis]
+    # num_classes = y.max() + 1
+    # for i in range(0, X.shape[0], batch):
+    #     # print(f"processing minibatch [{i}, {i+batch})...")
+    #     minibatch_X = X[i:i+batch]
+    #     minibatch_y = y[i:i+batch]
+    #     Z1 = np.maximum(0, np.matmul(minibatch_X,W1))
+    #     G2 = normalize_rows(np.exp(np.matmul(Z1,W2))) - one_hot(minibatch_y, dims=num_classes)
+    #     G1 = np.matmul(G2,W2.T) * (Z1 > 0).astype('int')
+    #     W1_grad = np.matmul(minibatch_X.T, G1)
+    #     W2_grad = np.matmul(Z1.T, G2)
+    #     W1 -= (lr / batch) * W1_grad
+    #     W2 -= (lr / batch) * W2_grad
+
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    num_classes = y.max() + 1
+    for i in range(0, X.shape[0], batch):
+        print(f"processing minibatch [{i}, {i+batch})...")
+        minibatch_X = ndl.Tensor(X[i:i+batch])
+        minibatch_y = ndl.Tensor(one_hot(y[i:i+batch], dims=num_classes))
+        Z = ndl.matmul(ndl.relu(ndl.matmul(minibatch_X, W1)), W2)
+        loss = softmax_loss(Z, minibatch_y)
+        loss.backward()
+        W1 = ndl.sub(W1, ndl.mul_scalar(W1.grad, (lr / batch))).detach()
+        W2 = ndl.sub(W2, ndl.mul_scalar(W2.grad, (lr / batch))).detach()
+
+    return (W1, W2)
     ### END YOUR SOLUTION
 
 
