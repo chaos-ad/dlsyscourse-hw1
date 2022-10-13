@@ -427,7 +427,7 @@ def find_topo_sort(node_list: List[Value]) -> List[Value]:
     visited = []
     for node in node_list:
         topo_sort_dfs(node, visited, result)
-    return result
+    return reswult
     ### END YOUR SOLUTION
 
 

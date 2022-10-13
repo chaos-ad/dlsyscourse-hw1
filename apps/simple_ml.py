@@ -1,4 +1,3 @@
-from locale import normalize
 import struct
 import gzip
 import numpy as np
@@ -153,14 +152,21 @@ def nn_epoch(X, y, W1, W2, lr = 0.1, batch=100):
     ### BEGIN YOUR SOLUTION
     num_classes = y.max() + 1
     for i in range(0, X.shape[0], batch):
-        print(f"processing minibatch [{i}, {i+batch})...")
+        # print(f"DEBUG: processing minibatch [{i}, {i+batch})...")
         minibatch_X = ndl.Tensor(X[i:i+batch])
         minibatch_y = ndl.Tensor(one_hot(y[i:i+batch], dims=num_classes))
-        Z = ndl.matmul(ndl.relu(ndl.matmul(minibatch_X, W1)), W2)
+        Z = ndl.relu(minibatch_X @ W1) @ W2
         loss = softmax_loss(Z, minibatch_y)
+        # print("DEBUG: calculating gradients...")
         loss.backward()
-        W1 = ndl.sub(W1, ndl.mul_scalar(W1.grad, (lr / batch))).detach()
-        W2 = ndl.sub(W2, ndl.mul_scalar(W2.grad, (lr / batch))).detach()
+        # print("DEBUG: calculating gradients: done")
+
+        ## Since softmax_loss is already returning the average loss over a
+        # batch of size m, we don't need to divide the gradients to batch:
+        # W1 = ndl.sub(W1, ndl.mul_scalar(W1.grad, (lr / batch))).detach()
+        # W2 = ndl.sub(W2, ndl.mul_scalar(W2.grad, (lr / batch))).detach()
+        W1 = ndl.sub(W1, ndl.mul_scalar(W1.grad, lr)).detach()
+        W2 = ndl.sub(W2, ndl.mul_scalar(W2.grad, lr)).detach()
 
     return (W1, W2)
     ### END YOUR SOLUTION
