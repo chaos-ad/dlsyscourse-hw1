@@ -209,10 +209,31 @@ def broadcast_to(a, shape):
     return BroadcastTo(shape)(a)
 
 
+def get_padded_shape(original_shape, folded_axes_ids):
+    if folded_axes_ids is None:
+        folded_axes_ids = range(len(original_shape))
+    elif isinstance(folded_axes_ids, tuple):
+        folded_axes_ids = list(folded_axes_ids)
+    elif isinstance(folded_axes_ids, int):
+        folded_axes_ids = [folded_axes_ids]
+    else:
+        raise Exception(f"Unexpected argument type: {type(folded_axes_ids)=}")
+
+    for idx, folded_axis_id in enumerate(folded_axes_ids):
+        if folded_axis_id < 0:
+            folded_axes_ids[idx] = len(original_shape) + folded_axis_id
+
+    result = []
+    for axis_idx, axis_size in enumerate(original_shape):
+        if axis_idx in folded_axes_ids:
+            result.append(1)
+        else:
+            result.append(axis_size)
+
+    return result
+
 class Summation(TensorOp):
     def __init__(self, axes: Optional[tuple] = None):
-        ## FIXME: This functionality of numpy is not supported in gradient fn:
-        ## >  If axis is negative it counts from the last to the first axis
         self.axes = axes
 
     def compute(self, a):
@@ -222,12 +243,8 @@ class Summation(TensorOp):
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        axes = self.axes if isinstance(self.axes, (list, type(None))) else [self.axes]
         in_shape = node.inputs[0].shape
-        out_shape = out_grad
-        out_shape_padded = []
-        for dim_idx, dim_size in enumerate(in_shape):
-            out_shape_padded.append(1 if (axes is None or dim_idx in axes) else dim_size)
+        out_shape_padded = get_padded_shape(in_shape, self.axes)
         return broadcast_to(reshape(out_grad, shape=out_shape_padded), shape=in_shape)
         ### END YOUR SOLUTION
 
